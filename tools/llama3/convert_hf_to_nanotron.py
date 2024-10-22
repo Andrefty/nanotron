@@ -11,7 +11,7 @@ import yaml
 from nanotron import logging
 from nanotron.config import Config, GeneralArgs, LoggingArgs, ModelArgs, ParallelismArgs, TokenizerArgs
 from nanotron.config.models_config import ExistingCheckpointInit
-from nanotron.config.models_config import LlamaConfig as LlamaConfigNanotron
+from nanotron.config.models_config import LlamaBitNetConfig as LlamaBitNetConfigNanotron
 from nanotron.logging import log_rank, set_ranks_logging_level
 from nanotron.models import build_model
 from nanotron.models.llama import LlamaForTraining
@@ -25,9 +25,31 @@ from transformers import AutoModelForCausalLM, AutoTokenizer
 
 logger = logging.get_logger(__name__)
 
-DEVICE = torch.device("cpu")
+# DEVICE = torch.device("cpu")
+DEVICE = torch.device("cuda")
 TORCH_DTYPE = torch.bfloat16
 
+def unpack_weights(packed: torch.Tensor, bits: int = 2) -> torch.Tensor:
+    values_per_item = 8 // bits
+    packed_shape = packed.shape
+
+    if len(packed_shape) == 1:
+        original_row_dim = packed_shape[0] * values_per_item
+        unpacked_shape = (original_row_dim,)
+    else:
+        original_row_dim = packed_shape[0] * values_per_item
+        unpacked_shape = (original_row_dim, *packed_shape[1:])
+
+    unpacked = torch.zeros(unpacked_shape, device=packed.device, dtype=torch.uint8)
+
+    for i in range(values_per_item):
+        start = i * packed_shape[0]
+        end = start + packed_shape[0]
+        mask = (3 << (2 * i))
+        unpacked[start:end] = (packed & mask) >> (2 * i)
+
+    unpacked = unpacked.to(torch.float) - 1
+    return unpacked
 
 def get_args():
     parser = argparse.ArgumentParser()
@@ -50,7 +72,6 @@ def get_args():
     args = parser.parse_args()
 
     return args
-
 
 def main(args):
     # Init Nanotron Parallel Utilities
@@ -77,14 +98,14 @@ def main(args):
     hf_config = hf_model.config
 
     # Set Nanotron LlamaConfig
-    nanotron_llama_config = LlamaConfigNanotron(
+    nanotron_llama_config = LlamaBitNetConfigNanotron(
         bos_token_id=hf_config.bos_token_id,
         eos_token_id=hf_config.eos_token_id,
         hidden_act=hf_config.hidden_act,
         hidden_size=hf_config.hidden_size,
         initializer_range=hf_config.initializer_range,
         intermediate_size=hf_config.intermediate_size,
-        is_llama_config=True,
+        is_bitnet_config=True,
         max_position_embeddings=hf_config.max_position_embeddings,
         num_attention_heads=hf_config.num_attention_heads,
         num_hidden_layers=hf_config.num_hidden_layers,
@@ -93,12 +114,16 @@ def main(args):
         pretraining_tp=hf_config.pretraining_tp,
         rms_norm_eps=hf_config.rms_norm_eps,
         rope_scaling=hf_config.rope_scaling,
-        rope_theta=hf_config.rope_theta,
-        rope_interleaved=False,
+        # rope_theta=hf_config.rope_theta,
+        # rope_interleaved=False,
         tie_word_embeddings=hf_config.tie_word_embeddings,
         use_cache=hf_config.use_cache,
         vocab_size=hf_config.vocab_size,
+        # is_llama_config=True
     )
+    # Set the rope_theta attribute directly
+    nanotron_llama_config.rope_theta = hf_config.rope_theta
+    nanotron_llama_config.rope_interleaved = False
 
     # Init Llama3-8B Nanotron model
     log_rank("Init empty Nanotron Llama3 Model", logger=logger, level=logging.INFO, rank=0)
@@ -127,7 +152,7 @@ def main(args):
     )
     with torch.no_grad():
         nanotron_model.model.token_position_embeddings.pp_block.token_embedding.weight.copy_(
-            hf_model.model.embed_tokens.weight
+            unpack_weights(hf_model.model.embed_tokens.weight)
         )
 
     # Decoder layers
@@ -143,16 +168,16 @@ def main(args):
         )
         with torch.no_grad():
             nanotron_model.model.decoder[i].pp_block.input_layernorm.weight.copy_(
-                hf_model.model.layers[i].input_layernorm.weight
+                unpack_weights(hf_model.model.layers[i].input_layernorm.weight)
             )
 
         # Self attn
         ## QKV
         tmp_qkv_proj = torch.cat(
             [
-                hf_model.model.layers[i].self_attn.q_proj.weight,
-                hf_model.model.layers[i].self_attn.k_proj.weight,
-                hf_model.model.layers[i].self_attn.v_proj.weight,
+                unpack_weights(hf_model.model.layers[i].self_attn.q_proj.weight),
+                unpack_weights(hf_model.model.layers[i].self_attn.k_proj.weight),
+                unpack_weights(hf_model.model.layers[i].self_attn.v_proj.weight),
             ],
             dim=0,
         )
@@ -167,15 +192,15 @@ def main(args):
         )
         with torch.no_grad():
             nanotron_model.model.decoder[i].pp_block.attn.o_proj.weight.copy_(
-                hf_model.model.layers[i].self_attn.o_proj.weight
+                unpack_weights(hf_model.model.layers[i].self_attn.o_proj.weight)
             )
 
         # MLP
         ## Gate Up Proj
         tmp_gate_up_proj = torch.cat(
             [
-                hf_model.model.layers[i].mlp.gate_proj.weight,
-                hf_model.model.layers[i].mlp.up_proj.weight,
+                unpack_weights(hf_model.model.layers[i].mlp.gate_proj.weight),
+                unpack_weights(hf_model.model.layers[i].mlp.up_proj.weight),
             ],
             dim=0,
         )
@@ -191,7 +216,7 @@ def main(args):
         )
         with torch.no_grad():
             nanotron_model.model.decoder[i].pp_block.mlp.down_proj.weight.copy_(
-                hf_model.model.layers[i].mlp.down_proj.weight
+                unpack_weights(hf_model.model.layers[i].mlp.down_proj.weight)
             )
 
         # Post attn layer norm
@@ -201,20 +226,20 @@ def main(args):
         )
         with torch.no_grad():
             nanotron_model.model.decoder[i].pp_block.post_attention_layernorm.weight.copy_(
-                hf_model.model.layers[i].post_attention_layernorm.weight
+                unpack_weights(hf_model.model.layers[i].post_attention_layernorm.weight)
             )
 
     # Last layer norm
     log_rank("Copying Final Layer Norm...", logger=logger, level=logging.INFO, rank=0)
     assert nanotron_model.model.final_layer_norm.pp_block.weight.shape == hf_model.model.norm.weight.shape
     with torch.no_grad():
-        nanotron_model.model.final_layer_norm.pp_block.weight.copy_(hf_model.model.norm.weight)
+        nanotron_model.model.final_layer_norm.pp_block.weight.copy_(unpack_weights(hf_model.model.norm.weight))
 
     # LM_Head
     log_rank("Copying LM Head...", logger=logger, level=logging.INFO, rank=0)
     assert nanotron_model.model.lm_head.pp_block.weight.shape == hf_model.lm_head.weight.shape
     with torch.no_grad():
-        nanotron_model.model.lm_head.pp_block.weight.copy_(hf_model.lm_head.weight)
+        nanotron_model.model.lm_head.pp_block.weight.copy_(unpack_weights(hf_model.lm_head.weight))
 
     log_rank("Copied weights from HF model to Nanotron model!", logger=logger, level=logging.INFO, rank=0)
     # Store weights
