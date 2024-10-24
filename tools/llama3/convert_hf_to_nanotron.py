@@ -155,7 +155,7 @@ def main(args):
     )
     with torch.no_grad():
         nanotron_model.model.token_position_embeddings.pp_block.token_embedding.weight.copy_(
-            unpack_weights(hf_model.model.embed_tokens.weight)
+            hf_model.model.embed_tokens.weight
         )
 
     # Decoder layers
@@ -171,7 +171,7 @@ def main(args):
         )
         with torch.no_grad():
             nanotron_model.model.decoder[i].pp_block.input_layernorm.weight.copy_(
-                unpack_weights(hf_model.model.layers[i].input_layernorm.weight)
+                hf_model.model.layers[i].input_layernorm.weight
             )
 
         # Self attn
@@ -229,20 +229,20 @@ def main(args):
         )
         with torch.no_grad():
             nanotron_model.model.decoder[i].pp_block.post_attention_layernorm.weight.copy_(
-                unpack_weights(hf_model.model.layers[i].post_attention_layernorm.weight)
+                hf_model.model.layers[i].post_attention_layernorm.weight
             )
 
     # Last layer norm
     log_rank("Copying Final Layer Norm...", logger=logger, level=logging.INFO, rank=0)
     assert nanotron_model.model.final_layer_norm.pp_block.weight.shape == hf_model.model.norm.weight.shape
     with torch.no_grad():
-        nanotron_model.model.final_layer_norm.pp_block.weight.copy_(unpack_weights(hf_model.model.norm.weight))
+        nanotron_model.model.final_layer_norm.pp_block.weight.copy_(hf_model.model.norm.weight)
 
     # LM_Head
     log_rank("Copying LM Head...", logger=logger, level=logging.INFO, rank=0)
     assert nanotron_model.model.lm_head.pp_block.weight.shape == hf_model.lm_head.weight.shape
     with torch.no_grad():
-        nanotron_model.model.lm_head.pp_block.weight.copy_(unpack_weights(hf_model.lm_head.weight))
+        nanotron_model.model.lm_head.pp_block.weight.copy_(hf_model.lm_head.weight)
 
     log_rank("Copied weights from HF model to Nanotron model!", logger=logger, level=logging.INFO, rank=0)
     # Store weights
