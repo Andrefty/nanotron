@@ -40,16 +40,13 @@ def unpack_weights(packed: torch.Tensor, bits: int = 2) -> torch.Tensor:
         original_row_dim = packed_shape[0] * values_per_item
         unpacked_shape = (original_row_dim, *packed_shape[1:])
 
-    # Convert packed tensor to uint8 for bitwise operations
-    packed_uint8 = packed.to(torch.uint8)
-
     unpacked = torch.zeros(unpacked_shape, device=packed.device, dtype=torch.uint8)
 
     for i in range(values_per_item):
         start = i * packed_shape[0]
         end = start + packed_shape[0]
         mask = (3 << (2 * i))
-        unpacked[start:end] = (packed_uint8 & mask) >> (2 * i)
+        unpacked[start:end] = (packed & mask) >> (2 * i)
 
     unpacked = unpacked.to(torch.float) - 1
     return unpacked
