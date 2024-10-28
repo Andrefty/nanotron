@@ -97,6 +97,10 @@ def main(args):
     ).to(DEVICE)
     hf_config = hf_model.config
 
+    # Log HF model configuration
+    log_rank(f"HF Model hidden_size: {hf_config.hidden_size}", logger=logger, level=logging.INFO, rank=0)
+    log_rank(f"HF Model num_attention_heads: {hf_config.num_attention_heads}", logger=logger, level=logging.INFO, rank=0)
+
     # Set Nanotron LlamaConfig
     nanotron_llama_config = LlamaBitNetConfigNanotron(
         bos_token_id=hf_config.bos_token_id,
@@ -138,6 +142,10 @@ def main(args):
         dtype=TORCH_DTYPE,
         device=DEVICE,
     )
+
+    # Log Nanotron model configuration
+    log_rank(f"Nanotron Model hidden_size: {nanotron_llama_config.hidden_size}", logger=logger, level=logging.INFO, rank=0)
+    log_rank(f"Nanotron Model num_attention_heads: {nanotron_llama_config.num_attention_heads}", logger=logger, level=logging.INFO, rank=0)
 
     mark_tied_parameters(model=nanotron_model, parallel_context=parallel_context)
     sanity_check(root_module=nanotron_model)
@@ -186,6 +194,8 @@ def main(args):
             nanotron_model.model.decoder[i].pp_block.attn.qkv_proj.weight.copy_(tmp_qkv_proj)
 
         ## O
+        log_rank(f"Layer {i} O Proj HF shape: {hf_model.model.layers[i].self_attn.o_proj.weight.shape}", logger=logger, level=logging.INFO, rank=0)
+        log_rank(f"Layer {i} O Proj Nanotron shape: {nanotron_model.model.decoder[i].pp_block.attn.o_proj.weight.shape}", logger=logger, level=logging.INFO, rank=0)
         assert (
             hf_model.model.layers[i].self_attn.o_proj.weight.shape
             == nanotron_model.model.decoder[i].pp_block.attn.o_proj.weight.shape
@@ -210,6 +220,8 @@ def main(args):
             nanotron_model.model.decoder[i].pp_block.mlp.gate_up_proj.weight.copy_(tmp_gate_up_proj)
 
         ## Down Proj
+        log_rank(f"Layer {i} Down Proj HF shape: {hf_model.model.layers[i].mlp.down_proj.weight.shape}", logger=logger, level=logging.INFO, rank=0)
+        log_rank(f"Layer {i} Down Proj Nanotron shape: {nanotron_model.model.decoder[i].pp_block.mlp.down_proj.weight.shape}", logger=logger, level=logging.INFO, rank=0)
         assert (
             hf_model.model.layers[i].mlp.down_proj.weight.shape
             == nanotron_model.model.decoder[i].pp_block.mlp.down_proj.weight.shape
