@@ -95,7 +95,7 @@ optimizer = OptimizerArgs(
 )
 
 parallelism = ParallelismArgs(
-    dp=2,
+    dp=1,
     pp=1,
     tp=1,
     pp_engine="1f1b",

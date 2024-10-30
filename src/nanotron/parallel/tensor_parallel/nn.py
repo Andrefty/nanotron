@@ -403,17 +403,17 @@ class TensorParallelColumnLinearBitNet(nn.Linear):
         if not self.training : 
             w = self.weight  # a weight tensor with shape [d, k]
             w = w.to(torch.bfloat16)
-            w_scale = getattr(self, "weight_scale").data
+            w_quant = weight_quant(w)
             x_norm = normalize(x, self.in_features)
-            x_quant, x_scale = activation_quant_inference(x_norm)
+            x_quant = activation_quant(x_norm)
             return column_linear(
                 input=x_quant,
-                weight=w,
+                weight=w_quant,
                 bias=self.bias,
                 group=self.pg,
                 tp_mode=self.mode,
                 async_communication=self.async_communication,
-            ) / w_scale / x_scale
+            ) 
         else : 
             w = self.weight
             x_norm = normalize(x, self.in_features)
@@ -497,18 +497,17 @@ class TensorParallelRowLinearBitNet(nn.Linear):
         if not self.training : 
             w = self.weight  # a weight tensor with shape [d, k]
             w = w.to(torch.bfloat16)
-            w_scale = getattr(self, "weight_scale").data
+            w_quant = weight_quant(w)
             x_norm = normalize(x, self.in_features)
-            x_quant, x_scale = activation_quant_inference(x_norm)
-            # print("x_quant from row_linear: ",x_quant.shape)
+            x_quant = activation_quant(x_norm)
             return row_linear(
                 input=x_quant,
-                weight=w,
+                weight=w_quant,
                 bias=self.bias,
                 group=self.pg,
                 tp_mode=self.mode,
                 async_communication=self.async_communication,
-            ) / w_scale / x_scale
+            ) 
         else : 
             w = self.weight
             x_norm = normalize(x, self.in_features)
