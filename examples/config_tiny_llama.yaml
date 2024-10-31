@@ -3,6 +3,7 @@ checkpoints:
   checkpoints_path: checkpoints
   checkpoints_path_is_shared_file_system: false
   resume_checkpoint_path: null
+  save_final_state: true
   save_initial_state: false
 data_stages:
 - data:
@@ -87,14 +88,17 @@ optimizer:
   weight_decay: 0.01
   zero_stage: 0
 parallelism:
-  dp: 2
+  dp: 1
   expert_parallel_size: 1
   pp: 1
   pp_engine: 1f1b
+  recompute_layer: false
   tp: 1
   tp_linear_async_communication: true
   tp_mode: REDUCE_SCATTER
+  tp_recompute_allgather: true
 profiler: null
+s3_upload: null
 tokenizer:
   tokenizer_max_length: null
   tokenizer_name_or_path: robot-test/dummy-tokenizer-wordlevel
