@@ -11,7 +11,7 @@ import yaml
 from nanotron import logging
 from nanotron.config import Config, GeneralArgs, LoggingArgs, ModelArgs, ParallelismArgs, TokenizerArgs
 from nanotron.config.models_config import ExistingCheckpointInit
-from nanotron.config.models_config import LlamaConfig as LlamaConfigNanotron
+from nanotron.config.models_config import LlamaBitNetConfig as LlamaBitNetConfigNanotron
 from nanotron.logging import log_rank, set_ranks_logging_level
 from nanotron.models import build_model
 from nanotron.models.llama import LlamaForTraining
@@ -77,14 +77,14 @@ def main(args):
     hf_config = hf_model.config
 
     # Set Nanotron LlamaConfig
-    nanotron_llama_config = LlamaConfigNanotron(
+    nanotron_llama_config = LlamaBitNetConfigNanotron(
         bos_token_id=hf_config.bos_token_id,
         eos_token_id=hf_config.eos_token_id,
         hidden_act=hf_config.hidden_act,
         hidden_size=hf_config.hidden_size,
         initializer_range=hf_config.initializer_range,
         intermediate_size=hf_config.intermediate_size,
-        is_llama_config=True,
+        is_bitnet_config=True,
         max_position_embeddings=hf_config.max_position_embeddings,
         num_attention_heads=hf_config.num_attention_heads,
         num_hidden_layers=hf_config.num_hidden_layers,
@@ -98,8 +98,11 @@ def main(args):
         tie_word_embeddings=hf_config.tie_word_embeddings,
         use_cache=hf_config.use_cache,
         vocab_size=hf_config.vocab_size,
+        # is_llama_config=True
     )
-
+    # Set the rope_theta attribute directly
+    # nanotron_llama_config.rope_theta = hf_config.rope_theta
+    # nanotron_llama_config.rope_interleaved = False
     # Init Llama3-8B Nanotron model
     log_rank("Init empty Nanotron Llama3 Model", logger=logger, level=logging.INFO, rank=0)
     nanotron_model = build_model(
