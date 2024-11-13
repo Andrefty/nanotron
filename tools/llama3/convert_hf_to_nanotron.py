@@ -24,32 +24,10 @@ from tqdm import tqdm
 from transformers import AutoModelForCausalLM, AutoTokenizer
 
 logger = logging.get_logger(__name__)
-
 DEVICE = torch.device("cpu")
 
 TORCH_DTYPE = torch.bfloat16
 
-def unpack_weights(packed: torch.Tensor, bits: int = 2) -> torch.Tensor:
-    values_per_item = 8 // bits
-    packed_shape = packed.shape
-
-    if len(packed_shape) == 1:
-        original_row_dim = packed_shape[0] * values_per_item
-        unpacked_shape = (original_row_dim,)
-    else:
-        original_row_dim = packed_shape[0] * values_per_item
-        unpacked_shape = (original_row_dim, *packed_shape[1:])
-
-    unpacked = torch.zeros(unpacked_shape, device=packed.device, dtype=torch.uint8)
-
-    for i in range(values_per_item):
-        start = i * packed_shape[0]
-        end = start + packed_shape[0]
-        mask = (3 << (2 * i))
-        unpacked[start:end] = (packed & mask) >> (2 * i)
-
-    unpacked = unpacked.to(torch.float) - 1
-    return unpacked
 
 def get_args():
     parser = argparse.ArgumentParser()
@@ -118,16 +96,16 @@ def main(args):
         pretraining_tp=hf_config.pretraining_tp,
         rms_norm_eps=hf_config.rms_norm_eps,
         rope_scaling=hf_config.rope_scaling,
-        # rope_theta=hf_config.rope_theta,
-        # rope_interleaved=False,
+        rope_theta=hf_config.rope_theta,
+        rope_interleaved=False,
         tie_word_embeddings=hf_config.tie_word_embeddings,
         use_cache=hf_config.use_cache,
         vocab_size=hf_config.vocab_size,
         # is_llama_config=True
     )
     # Set the rope_theta attribute directly
-    nanotron_llama_config.rope_theta = hf_config.rope_theta
-    nanotron_llama_config.rope_interleaved = False
+    # nanotron_llama_config.rope_theta = hf_config.rope_theta
+    # nanotron_llama_config.rope_interleaved = False
 
     # Init Llama3-8B Nanotron model
     log_rank("Init empty Nanotron Llama3 Model", logger=logger, level=logging.INFO, rank=0)
@@ -183,9 +161,9 @@ def main(args):
         ## QKV
         tmp_qkv_proj = torch.cat(
             [
-                unpack_weights(hf_model.model.layers[i].self_attn.q_proj.weight),
-                unpack_weights(hf_model.model.layers[i].self_attn.k_proj.weight),
-                unpack_weights(hf_model.model.layers[i].self_attn.v_proj.weight),
+                hf_model.model.layers[i].self_attn.q_proj.weight,
+                hf_model.model.layers[i].self_attn.k_proj.weight,
+                hf_model.model.layers[i].self_attn.v_proj.weight,
             ],
             dim=0,
         )
@@ -202,15 +180,15 @@ def main(args):
         )
         with torch.no_grad():
             nanotron_model.model.decoder[i].pp_block.attn.o_proj.weight.copy_(
-                unpack_weights(hf_model.model.layers[i].self_attn.o_proj.weight)
+                hf_model.model.layers[i].self_attn.o_proj.weight
             )
 
         # MLP
         ## Gate Up Proj
         tmp_gate_up_proj = torch.cat(
             [
-                unpack_weights(hf_model.model.layers[i].mlp.gate_proj.weight),
-                unpack_weights(hf_model.model.layers[i].mlp.up_proj.weight),
+                hf_model.model.layers[i].mlp.gate_proj.weight,
+                hf_model.model.layers[i].mlp.up_proj.weight,
             ],
             dim=0,
         )
@@ -228,7 +206,7 @@ def main(args):
         )
         with torch.no_grad():
             nanotron_model.model.decoder[i].pp_block.mlp.down_proj.weight.copy_(
-                unpack_weights(hf_model.model.layers[i].mlp.down_proj.weight)
+                hf_model.model.layers[i].mlp.down_proj.weight
             )
 
         # Post attn layer norm
