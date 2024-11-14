@@ -96,16 +96,16 @@ def main(args):
         pretraining_tp=hf_config.pretraining_tp,
         rms_norm_eps=hf_config.rms_norm_eps,
         rope_scaling=hf_config.rope_scaling,
-        rope_theta=hf_config.rope_theta,
-        rope_interleaved=False,
+        # rope_theta=hf_config.rope_theta,
+        # rope_interleaved=False,
         tie_word_embeddings=hf_config.tie_word_embeddings,
         use_cache=hf_config.use_cache,
         vocab_size=hf_config.vocab_size,
         # is_llama_config=True
     )
     # Set the rope_theta attribute directly
-    # nanotron_llama_config.rope_theta = hf_config.rope_theta
-    # nanotron_llama_config.rope_interleaved = False
+    nanotron_llama_config.rope_theta = hf_config.rope_theta
+    nanotron_llama_config.rope_interleaved = False
 
     # Init Llama3-8B Nanotron model
     log_rank("Init empty Nanotron Llama3 Model", logger=logger, level=logging.INFO, rank=0)
@@ -167,6 +167,8 @@ def main(args):
             ],
             dim=0,
         )
+        log_rank(f"Layer {i} QKV Proj HF shape: {hf_model.model.layers[i].self_attn.q_proj.weight.shape}", logger=logger, level=logging.INFO, rank=0)
+        log_rank(f"Layer {i} QKV Proj Nanotron shape: {nanotron_model.model.decoder[i].pp_block.attn.qkv_proj.weight.shape}", logger=logger, level=logging.INFO, rank=0)
         assert tmp_qkv_proj.shape == nanotron_model.model.decoder[i].pp_block.attn.qkv_proj.weight.shape
         with torch.no_grad():
             nanotron_model.model.decoder[i].pp_block.attn.qkv_proj.weight.copy_(tmp_qkv_proj)

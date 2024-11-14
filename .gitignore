@@ -164,3 +164,4 @@ cython_debug/
 checkpoints/
 wandb/
 models/
+nanotron_checkpoints/
