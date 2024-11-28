@@ -1,5 +1,7 @@
 import torch
 from transformers import AutoModelForCausalLM
+import json
+import os
 
 def unpack_weights(packed: torch.Tensor, bits: int = 2) -> torch.Tensor:
     values_per_item = 8 // bits
@@ -31,35 +33,65 @@ def main():
     hf_model = AutoModelForCausalLM.from_pretrained(pretrained_model_name_or_path)
     hf_model.eval()
 
+    # Create a directory for logs if it doesn't exist
+    log_dir = os.path.join(output_dir, "logs")
+    os.makedirs(log_dir, exist_ok=True)
+
     # Unpack weights
     layers = hf_model.model.layers
     for i, layer in enumerate(layers):
         print(f"Unpacking weights for layer {i}...")
+        layer_log = {}
+
+        # Show a diff between the original and modified weights (visual check)
+        layer_log["Q_proj_diff"] = layer.self_attn.q_proj.weight[:10, :10].tolist()
+        layer_log["K_proj_diff"] = layer.self_attn.k_proj.weight[:10, :10].tolist()
+        layer_log["V_proj_diff"] = layer.self_attn.v_proj.weight[:10, :10].tolist()
+        layer_log["O_proj_diff"] = layer.self_attn.o_proj.weight[:10, :10].tolist()
+        layer_log["Gate_proj_diff"] = layer.mlp.gate_proj.weight[:10, :10].tolist()
+        layer_log["Up_proj_diff"] = layer.mlp.up_proj.weight[:10, :10].tolist()
+        layer_log["Down_proj_diff"] = layer.mlp.down_proj.weight[:10, :10].tolist()
 
         # Unpack QKV projections
-        print(f"Q_proj shape before: {layer.self_attn.q_proj.weight.shape}")
+        layer_log["Q_proj_shape_before"] = layer.self_attn.q_proj.weight.shape
         layer.self_attn.q_proj.weight = unpack_weights(layer.self_attn.q_proj.weight)
-        print(f"Q_proj shape after: {layer.self_attn.q_proj.weight.shape}")
-        print(f"K_proj shape before: {layer.self_attn.k_proj.weight.shape}")
+        layer_log["Q_proj_shape_after"] = layer.self_attn.q_proj.weight.shape
+
+        layer_log["K_proj_shape_before"] = layer.self_attn.k_proj.weight.shape
         layer.self_attn.k_proj.weight = unpack_weights(layer.self_attn.k_proj.weight)
-        print(f"K_proj shape after: {layer.self_attn.k_proj.weight.shape}")
-        print(f"V_proj shape before: {layer.self_attn.v_proj.weight.shape}")
+        layer_log["K_proj_shape_after"] = layer.self_attn.k_proj.weight.shape
+
+        layer_log["V_proj_shape_before"] = layer.self_attn.v_proj.weight.shape
         layer.self_attn.v_proj.weight = unpack_weights(layer.self_attn.v_proj.weight)
-        print(f"V_proj shape after: {layer.self_attn.v_proj.weight.shape}")
-        print(f"O_proj shape before: {layer.self_attn.o_proj.weight.shape}")
+        layer_log["V_proj_shape_after"] = layer.self_attn.v_proj.weight.shape
+
+        layer_log["O_proj_shape_before"] = layer.self_attn.o_proj.weight.shape
         layer.self_attn.o_proj.weight = unpack_weights(layer.self_attn.o_proj.weight)
-        print(f"O_proj shape after: {layer.self_attn.o_proj.weight.shape}")
+        layer_log["O_proj_shape_after"] = layer.self_attn.o_proj.weight.shape
 
         # Unpack MLP projections
-        print(f"Gate_proj shape before: {layer.mlp.gate_proj.weight.shape}")
+        layer_log["Gate_proj_shape_before"] = layer.mlp.gate_proj.weight.shape
         layer.mlp.gate_proj.weight = unpack_weights(layer.mlp.gate_proj.weight)
-        print(f"Gate_proj shape after: {layer.mlp.gate_proj.weight.shape}")
-        print(f"Up_proj shape before: {layer.mlp.up_proj.weight.shape}")
+        layer_log["Gate_proj_shape_after"] = layer.mlp.gate_proj.weight.shape
+
+        layer_log["Up_proj_shape_before"] = layer.mlp.up_proj.weight.shape
         layer.mlp.up_proj.weight = unpack_weights(layer.mlp.up_proj.weight)
-        print(f"Up_proj shape after: {layer.mlp.up_proj.weight.shape}")
-        print(f"Down_proj shape before: {layer.mlp.down_proj.weight.shape}")
+        layer_log["Up_proj_shape_after"] = layer.mlp.up_proj.weight.shape
+
+        layer_log["Down_proj_shape_before"] = layer.mlp.down_proj.weight.shape
         layer.mlp.down_proj.weight = unpack_weights(layer.mlp.down_proj.weight)
-        print(f"Down_proj shape after: {layer.mlp.down_proj.weight.shape}") 
+        layer_log["Down_proj_shape_after"] = layer.mlp.down_proj.weight.shape
+        
+        layer_log["Q_proj_diff_after"] = layer.self_attn.q_proj.weight[:10, :10].tolist()
+        layer_log["K_proj_diff_after"] = layer.self_attn.k_proj.weight[:10, :10].tolist()
+        layer_log["V_proj_diff_after"] = layer.self_attn.v_proj.weight[:10, :10].tolist()
+        layer_log["O_proj_diff_after"] = layer.self_attn.o_proj.weight[:10, :10].tolist()
+        layer_log["Gate_proj_diff_after"] = layer.mlp.gate_proj.weight[:10, :10].tolist()
+        layer_log["Up_proj_diff_after"] = layer.mlp.up_proj.weight[:10, :10].tolist()
+        layer_log["Down_proj_diff_after"] = layer.mlp.down_proj.weight[:10, :10].tolist()
+        # Save log for the current layer
+        with open(os.path.join(log_dir, f"layer_{i}_log.json"), "w") as log_file:
+            json.dump(layer_log, log_file, indent=4)
 
     # Save the unpacked model
     hf_model.save_pretrained(output_dir)
