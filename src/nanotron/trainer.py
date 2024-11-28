@@ -1,4 +1,5 @@
 import datetime
+import gc
 import json
 import os
 import shutil
@@ -94,7 +95,7 @@ from nanotron.serialize import (
     save_random_states,
 )
 from nanotron.serialize.metadata import DataStageMetadata, TrainingMetadata
-from nanotron.serialize.optimizer import load_optimizer
+from nanotron.serialize.optimizer import load_optimizer, state_dict_to_device
 
 logger = logging.get_logger(__name__)
 
@@ -198,7 +199,8 @@ class DistributedTrainer:
                 parallel_context=self.parallel_context,
                 root_folder=self.init_checkpoint_path,
                 param_shard_metadata=self.param_shard_metadata,
-                model=self.model,
+                model=self.unwrapped_model,
+                map_location="cpu",
             )
 
         # Init learning rate scheduler
@@ -210,6 +212,8 @@ class DistributedTrainer:
         if self.init_checkpoint_path is not None:
             load_lr_scheduler(
                 lr_scheduler=self.lr_scheduler,
+                is_zero=self.config.optimizer.zero_stage,
+                parallel_context=self.parallel_context,
                 root_folder=self.init_checkpoint_path,
             )
 
@@ -435,10 +439,15 @@ class DistributedTrainer:
         # Fix the root_model
         self.unwrapped_model.module_id_to_prefix[id(self.unwrapped_model)] = ""
 
+        self.initial_iter_step = self.metadata.last_train_step + 1
+        self.last_iter_step = self.config.tokens.train_steps
+
         prof = get_profiler(config=self.config)
+        # free memory
+        gc.collect()
         torch.cuda.empty_cache()
         with prof:
-            for self.iteration_step in range(self.metadata.last_train_step + 1, self.config.tokens.train_steps + 1):
+            for self.iteration_step in range(self.initial_iter_step, self.last_iter_step + 1):
                 if isinstance(prof, torch.profiler.profile):
                     prof.step()
 
@@ -473,9 +482,11 @@ class DistributedTrainer:
     def training_step(
         self, dataloader: Iterator[Dict[str, Union[torch.Tensor, TensorPointer]]]
     ) -> Tuple[Iterable[Dict], Optional[torch.Tensor]]:
-        before_tbi_sanity_checks(self.config, self.parallel_context, self.unwrapped_model, self.grad_accumulator)
+        before_tbi_sanity_checks(
+            self.config, self.parallel_context, self.unwrapped_model, self.grad_accumulator, self.lr_scheduler
+        )
 
-        if self.iteration_step < 5:
+        if self.iteration_step < self.initial_iter_step + 5:
             log_memory(logger=logger)
 
         outputs = self.pipeline_engine.train_batch_iter(
@@ -486,7 +497,7 @@ class DistributedTrainer:
             grad_accumulator=self.grad_accumulator,
         )
 
-        if self.iteration_step < 5:
+        if self.iteration_step < self.initial_iter_step + 5:
             log_memory(logger=logger)
 
         after_tbi_sanity_checks(self.config, self.parallel_context, self.unwrapped_model, self.grad_accumulator)
@@ -532,10 +543,6 @@ class DistributedTrainer:
                 max_norm=self.config.optimizer.clip_grad,
             )
 
-        before_optim_step_sanity_checks(
-            self.config, self.parallel_context, self.unwrapped_model, self.grad_accumulator
-        )
-
         # Compute DP average loss and overlap with optimizer step
         if isinstance(outputs[0]["loss"], torch.Tensor):
             # This is an average on only one data rank.
@@ -547,6 +554,14 @@ class DistributedTrainer:
         else:
             loss_avg = None
             handle = None
+
+        # Move optimizer states back to GPU before optimizer step
+        if self.init_checkpoint_path is not None and self.iteration_step == self.initial_iter_step:
+            state_dict_to_device(self.optimizer.state_dict(), "cuda")
+
+        before_optim_step_sanity_checks(
+            self.config, self.parallel_context, self.unwrapped_model, self.grad_accumulator, self.optimizer
+        )
 
         # Apply gradient
         self.optimizer.step()
@@ -895,9 +910,7 @@ class DistributedTrainer:
                 dist.get_rank(self.parallel_context.dp_pg) == 0
             ),  # We only save the weights on DP==0
             should_save_optimizer=True,
-            should_save_lr_scheduler=bool(
-                dist.get_rank(self.parallel_context.world_pg) == 0
-            ),  # We only save the lr_scheduler on world_rank==0
+            should_save_lr_scheduler=True,
             should_save_config=bool(
                 dist.get_rank(self.parallel_context.world_pg) == 0
             ),  # We only save the config on world_rank==0
