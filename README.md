@@ -1,5 +1,19 @@
 <h1 align="center">⚡️ Nanotron</h1>
 
+Environment setup for this specific fork:
+```bash
+conda create --name nanotronenv pytorch=2.4 pytorch-cuda python=3.11 ipykernel -c nvidia -c pytorch -y
+conda activate nanotronenv 
+git clone https://github.com/Andrefty/nanotron.git
+cd nanotron/
+git log -1
+pip install -e .
+pip install datasets transformers
+export MAKEFLAGS="-j8"
+export MAX_JOBS=8
+MAX_JOBS=8 pip -v install triton flash-attn
+```
+
 <p align="center">
     <a href="https://github.com/huggingface/nanotron/releases">
         <img alt="GitHub release" src="https://img.shields.io/github/release/huggingface/nanotron.svg">
