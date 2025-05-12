@@ -75,10 +75,12 @@ def main(args):
 
     # Init Llama3-8B Nanotron model
     log_rank("Init empty Nanotron Llama3 Model", logger=logger, level=logging.INFO, rank=0)
-
+    
+    nanotron_llama_config.rope_theta = 500000.0
+    nanotron_llama_config.rope_interleaved = False
     nanotron_model = build_model(
         model_builder=lambda: LlamaForTraining(
-            config=nanotron_config.model.model_config,
+            config=nanotron_llama_config,
             parallel_context=parallel_context,
             parallel_config=parallel_config,
             random_states=None,

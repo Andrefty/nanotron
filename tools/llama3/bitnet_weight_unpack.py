@@ -28,6 +28,7 @@ def unpack_weights(packed: torch.Tensor, bits: int = 2) -> torch.Tensor:
 def main():
     pretrained_model_name_or_path = "/home/andreif/Documents/nanotron/models/Llama3-8B-1.58-100B-tokens"
     output_dir = "/home/andreif/Documents/nanotron/models/Unpacked-Llama3-Bitnet/"
+    # output_dir = "/home/andreif/Documents/nanotron/models/Unpacked-Llama3-Bitnet-remind/"
 
     # Load the HF model
     hf_model = AutoModelForCausalLM.from_pretrained(pretrained_model_name_or_path)

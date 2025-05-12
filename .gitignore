@@ -165,3 +165,5 @@ checkpoints/
 wandb/
 models/
 nanotron_checkpoints/
+hf_checkpoints/
+gh_mesg.md

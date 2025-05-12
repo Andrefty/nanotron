@@ -17,6 +17,7 @@ from nanotron.config import (
     ParallelismArgs,
     PretrainDatasetsArgs,
     RandomInit,
+    ExistingCheckpointInit,
     TokenizerArgs,
     TokensArgs,
 )
@@ -124,14 +125,15 @@ data_stages = [
     ),
 ]
 
-checkpoints_path = "./checkpoints"
+checkpoints_path = "./checkpoints_fromsmallbitnet"
 os.makedirs(checkpoints_path, exist_ok=True)
 
 config = Config(
     general=GeneralArgs(project="debug", run="tiny_llama_%date_%jobid", seed=seed),
-    checkpoints=CheckpointsArgs(checkpoints_path=checkpoints_path, checkpoint_interval=10),
+    checkpoints=CheckpointsArgs(checkpoints_path=checkpoints_path, checkpoint_interval=10, save_final_state=True),
     parallelism=parallelism,
-    model=ModelArgs(init_method=RandomInit(std=0.025), model_config=model_config),
+    # model=ModelArgs(init_method=RandomInit(std=0.025), model_config=model_config),
+    model=ModelArgs(init_method=ExistingCheckpointInit("/home/andreif/Documents/nanotron/checkpoints/15"), model_config=model_config),
     tokenizer=TokenizerArgs("robot-test/dummy-tokenizer-wordlevel"),
     optimizer=optimizer,
     logging=LoggingArgs(),
